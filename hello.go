@@ -1,22 +1,28 @@
 package main
 
-import "fmt"
+import (
+	"net/http"
 
-func sum(a []int, c chan int) {
-	sum := 0
-	for _, v := range a {
-		sum += v
-	}
-	c <- sum // send sum to c
-}
+	"github.com/gin-gonic/gin"
+)
 
 func main() {
-	a := []int{7, 2, 8, -9, 4, 0}
+	router := gin.Default()
 
-	c := make(chan int)
-	go sum(a[:len(a)/2], c)
-	go sum(a[len(a)/2:], c)
-	x, y := <-c, <-c // receive from c
+	// This handler will match /user/john but will not match /user/ or /user
+	router.GET("/user/:name", func(c *gin.Context) {
+		name := c.Param("name")
+		c.String(http.StatusOK, "Hello %s", name)
+	})
 
-	fmt.Println(x, y, x+y)
+	// However, this one will match /user/john/ and also /user/john/send
+	// If no other routers match /user/john, it will redirect to /user/john/
+	router.GET("/user/:name/*action", func(c *gin.Context) {
+		name := c.Param("name")
+		action := c.Param("action")
+		message := name + " is " + action
+		c.String(http.StatusOK, message)
+	})
+
+	router.Run(":3000")
 }
