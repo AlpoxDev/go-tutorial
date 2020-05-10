@@ -621,5 +621,198 @@ func main()
     v := &Vertex{3, 4}
     fmt.Println(v.Abs())
 }
+```
+
+메소드 리시버(method receiver) 는 func 키워드와 메소드의 이름 사이에 인자로 들어갑니다.
+
+__메소드(2)__
+
+사실 메소드는 구조체 뿐만 아니라 아무 타입에도 가능합니다.
+
+__포인터 리시버를 가지는 메소드__
+
+포인터 리시버를 사용하는 이유는 2가지 입니다.
+- 메소드가 호출될 때마다 값이 복사되는 것을 방지하기 위함입니다.
+- 포인터가 아닌 값 타입일 경우 데이터가 변경이 되지 않습니다.
+
+## 인터페이스 : interface
+
+
+## HTTP
+
+```go
+package main
+
+import (
+	"fmt"
+	"net/http"
+)
+
+type String string
+
+type Struct struct {
+	Greeting string
+	Punct    string
+	Who      string
+}
+
+func (s String) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprint(w, s)
+}
+
+func (s *Struct) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprint(w, s.Greeting, s.Punct, s.Who)
+}
+
+func main() {
+	http.Handle("/string", String("Hello, World!"))
+    http.Handle("/struct", &Struct{"Hello", ":", "Greeting"})
+    
+    go fmt.Println("Listening to 4000...")
+	go http.ListenAndServe("localhost:4000", nil)
+	
+}
+```
+
+## 고루틴(Goroutines)
+
+```go
+package main
+
+import (
+    "fmt"
+    "time"
+)
+
+func say(s string) {
+    for i := 0; i < 5; i++ {
+        time.Sleep(100 * time.Millisecond)
+        fmt.Println(s)
+    }
+}
+
+func main() {
+    go say("world")
+    say("hello")
+}
+```
+
+Goroutines은 Go런타임에 의해 관리되는 경량 쓰레드입니다.  
+
+고루틴은 항상 동일한 주소 공간에서 실행되므로, 공유되는 자원으로서의 접근은 반드시 동기화되어야 합니다.
+
+## 채널(Channels)
+
+```go
+package main
+
+import "fmt"
+
+func sum(a []int, c chan int) {
+    sum := 0
+    for _, v := range a {
+        sum += v
+    }
+    c <- sum // send sum to c
+}
+
+func main() {
+    a := []int{7, 2, 8, -9, 4, 0}
+
+    c := make(chan int)
+    go sum(a[:len(a)/2], c)
+    go sum(a[len(a)/2:], c)
+    x, y := <-c, <-c // receive from c
+
+    fmt.Println(x, y, x+y)
+}
+```
+
+채널은 채널연산자 `<-` 를 이용해 값을 주고 받을 수 있는, 타입이 존재하는 파이프입니다. 맵이나 슬라이스처럼, 채널은 사용되기전에 생성되어야 합니다.
+
+__버퍼링 되는 채널__
+
+채널은 버퍼링 될 수 있습니다. make 두번째 인자로 버퍼 용량을 넣음으로써 해당 용량만큼 버퍼링되는 채널을 생성할 수 있습니다.
+
+```go
+ch := make(chan int, 100)
+```
+
+버퍼링되는 채널로의 송신은 버퍼가 꽉 찰 때까지 블록됩니다. 수신측은 버퍼가 빌 때 블록됩니다.
+
+## Range & Close
+
+```go
+package main
+
+import (
+    "fmt"
+)
+
+func fibonacci(n int, c chan int) {
+    x, y := 0, 1
+    for i := 0; i < n; i++ {
+        c <- x
+        x, y = y, x+y
+    }
+    close(c)
+}
+
+func main() {
+    c := make(chan int, 10)
+    go fibonacci(cap(c), c)
+    for i := range c {
+        fmt.Println(i)
+    }
+}
+
+```
+
+데이터 송신측은 더이상 보낼 값이 없다는 것을 알리기 위해 채널을 close 할 수 있습니다. 수신측은 다음과 같이 수신 코드에 두번째 인자를 줌으로써 채널이 닫혔는지 테스트 할 수 있습니다.
+
+```go
+v, ok := <-ch
+```
+
+채널이 이미 닫혔고 더이상 받을 값이 없다면 ok 는 false 가 됩니다.
+
+`for i := range c` 반복문은 채널이 닫힐 때까지 계속해서 값을 받습니다.
+
+__주의__: 송신측만 채널을 닫을 수 있습니다. 수신측에선 불가능합니다. 이미 닫힌 채널에 데이터를 보내면 패닉이 일어납니다.
+
+__또하나의 주의__: 채널은 파일과 다릅니다; 항상 닫을 필요는 없습니다. 채널을 닫는 행위는 오로지 수신측에게 더이상 보낼 값이 없다고 말해야 할때만 행해지면 됩니다. range 루프를 종료시켜야 할 때처럼요.
+
+
+## 셀렉트(Select)
+
+```go
+package main
+
+import "fmt"
+
+func fibonacci(c, quit chan int) {
+    x, y := 0, 1
+    for {
+        select {
+        case c <- x:
+            x, y = y, x+y
+        case <-quit:
+            fmt.Println("quit")
+            return
+        }
+    }
+}
+
+func main() {
+    c := make(chan int)
+    quit := make(chan int)
+    go func() {
+        for i := 0; i < 10; i++ {
+            fmt.Println(<-c)
+        }
+        quit <- 0
+    }()
+    fibonacci(c, quit)
+}
 
 ```
